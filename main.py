@@ -20,13 +20,15 @@ last_update_id = 0
 user_chat_id = None
 
 
-async def send_telegram(session: aiohttp.ClientSession, text: str, chat_id: str = None):
+async def send_telegram(session: aiohttp.ClientSession, text: str, chat_id: str = None, buttons: list = None):
     cid = chat_id or user_chat_id
     if not cid:
         log.warning("No chat_id yet — skipping message")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": cid, "text": text, "parse_mode": "HTML"}
+    payload = {"chat_id": cid, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if buttons:
+        payload["reply_markup"] = json.dumps({"inline_keyboard": [buttons]})
     try:
         async with session.post(url, json=payload) as r:
             log.info(f"TG sent: {r.status}")
@@ -39,13 +41,14 @@ async def spam_listing_alert(session: aiohttp.ClientSession, price_info: str):
     if listing_notified:
         return
     listing_notified = True
+    trade_url = f"https://app.hyperliquid.xyz/trade/xyz:{COIN}"
     msg = (
         f"🚨🚨🚨 <b>ТОРГИ {COIN} ВІДКРИЛИСЬ!</b> 🚨🚨🚨\n\n"
         f"{price_info}\n\n"
-        f"👉 <a href='https://app.hyperliquid.xyz/trade/xyz:{COIN}'>ВІДКРИТИ HYPERLIQUID</a>\n\n"
         f"⚡ ЛОНГ ЗАРАЗ!"
     )
-    tasks = [send_telegram(session, msg) for _ in range(5)]
+    btn = [{"text": "🚀 ВІДКРИТИ HYPERLIQUID", "url": trade_url}]
+    tasks = [send_telegram(session, msg, buttons=btn) for _ in range(5)]
     await asyncio.gather(*tasks)
     log.info("LISTING ALERT x5!")
 
