@@ -8,7 +8,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("spcx")
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 COIN = os.environ.get("COIN", "SPCX")
 
 HL_WS = "wss://api.hyperliquid.xyz/ws"
@@ -18,11 +17,16 @@ listing_notified = False
 tracking_coin = None
 tracking_active = False
 last_update_id = 0
+user_chat_id = None
 
 
 async def send_telegram(session: aiohttp.ClientSession, text: str, chat_id: str = None):
+    cid = chat_id or user_chat_id
+    if not cid:
+        log.warning("No chat_id yet — skipping message")
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id or TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+    payload = {"chat_id": cid, "text": text, "parse_mode": "HTML"}
     try:
         async with session.post(url, json=payload) as r:
             log.info(f"TG sent: {r.status}")
@@ -80,7 +84,7 @@ def get_mid_price(data) -> str | None:
 
 # --- Telegram command polling ---
 async def poll_commands(session: aiohttp.ClientSession):
-    global last_update_id, tracking_coin, tracking_active
+    global last_update_id, tracking_coin, tracking_active, user_chat_id
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
 
     while True:
@@ -93,8 +97,20 @@ async def poll_commands(session: aiohttp.ClientSession):
                     msg = update.get("message", {})
                     text = msg.get("text", "")
                     chat_id = str(msg.get("chat", {}).get("id", ""))
+                    if not user_chat_id:
+                        user_chat_id = chat_id
+                        log.info(f"Chat ID set: {chat_id}")
 
-                    if text.startswith("/track "):
+                    if text.startswith("/start"):
+                        user_chat_id = chat_id
+                        await send_telegram(session,
+                            f"✅ <b>Бот активний!</b>\n\n"
+                            f"🔍 Моніторю лістинг: <b>{COIN}</b>\n\n"
+                            f"/track BTC — трекати ціну кожну секунду\n"
+                            f"/stop — зупинити трекінг\n"
+                            f"/status — статус бота", chat_id)
+
+                    elif text.startswith("/track "):
                         coin = text.split(" ", 1)[1].strip().upper()
                         tracking_coin = coin
                         tracking_active = True
@@ -178,16 +194,8 @@ async def http_poll(session: aiohttp.ClientSession):
 
 
 async def main():
-    log.info(f"Bot started | Listing monitor: {COIN} | Commands: /track /stop /status")
+    log.info(f"Bot started | Listing monitor: {COIN} | Send /start to the bot in Telegram")
     async with aiohttp.ClientSession() as session:
-        await send_telegram(session,
-            f"✅ <b>Бот запущено!</b>\n\n"
-            f"🔍 Моніторю лістинг: <b>{COIN}</b>\n\n"
-            f"Команди:\n"
-            f"/track BTC — трекати ціну кожну секунду\n"
-            f"/stop — зупинити трекінг\n"
-            f"/status — статус бота"
-        )
         await asyncio.gather(
             ws_monitor(session),
             http_poll(session),
