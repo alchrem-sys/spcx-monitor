@@ -51,6 +51,8 @@ async def spam_listing_alert(session: aiohttp.ClientSession, price_info: str):
 
 
 def parse_book(data) -> str | None:
+    if not data or not isinstance(data, dict):
+        return None
     levels = data.get("levels", [])
     if not levels:
         return None
@@ -67,6 +69,8 @@ def parse_book(data) -> str | None:
 
 
 def get_mid_price(data) -> str | None:
+    if not data or not isinstance(data, dict):
+        return None
     levels = data.get("levels", [])
     if not levels:
         return None
@@ -173,7 +177,7 @@ async def ws_monitor(session: aiohttp.ClientSession):
                         break
         except Exception as e:
             log.error(f"WS error: {e}")
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)
 
 
 # --- SPCX listing monitor (HTTP fallback) ---
